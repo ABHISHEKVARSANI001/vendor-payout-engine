@@ -3,9 +3,11 @@ This module serves as the entry point for the Vendor Payout & Deduction Engine A
 It configures the FastAPI application instance, routes, and documentation settings.
 """
 
-from fastapi import FastAPI, UploadFile, File
+import joblib
+import numpy as np
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
-from models import PayoutRequest, PayoutResponse
+from models import PayoutRequest, PayoutResponse, PredictionRequest, PredictionResponse
 from services import calculate_net_payout, process_bulk_csv
 
 # Initialize the FastAPI app with metadata for interactive documentation (Swagger UI / ReDoc)
@@ -18,6 +20,15 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+
+# Load the machine learning model on application startup
+MODEL_PATH = "revenue_predictor.joblib"
+try:
+    predictor_model = joblib.load(MODEL_PATH)
+except FileNotFoundError:
+    predictor_model = None
+    # Log the warning to console; allows backend to function without crashing if model is missing
+    print(f"Warning: Model file '{MODEL_PATH}' was not found. Prediction endpoint will return a 503 error until configured.")
 
 
 @app.get("/", tags=["Health Check"])
@@ -94,3 +105,45 @@ async def process_batch(file: UploadFile = File(...)) -> FileResponse:
         media_type="text/csv",
         filename="processed_payouts.csv"
     )
+
+
+@app.post(
+    "/predict-revenue",
+    response_model=PredictionResponse,
+    summary="Predict Next Month's Vendor Revenue",
+    tags=["Predictive Analytics"]
+)
+def predict_revenue(payload: PredictionRequest) -> PredictionResponse:
+    """
+    Infers next month's predicted revenue for a vendor utilizing a trained machine learning model.
+    
+    Takes standard financial features and formats them into a 2D matrix structure to execute
+    inference through a serialized RandomForestRegressor pipeline.
+    
+    Args:
+        payload (PredictionRequest): Validation schema wrapper containing feature variables.
+        
+    Returns:
+        PredictionResponse: A predicted revenue estimate, rounded to 2 decimal places.
+        
+    Raises:
+        HTTPException: 503 error if the underlying estimator object is uninitialized or missing.
+    """
+    if predictor_model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Predictive analysis model is currently uninitialized or unavailable on server."
+        )
+
+    # Scikit-learn estimators require a 2D array representation for feature matrix data
+    features_array = np.array([[
+        payload.gross_revenue,
+        payload.platform_fee_percentage,
+        payload.variable_tax_percentage
+    ]])
+
+    # Generate inference values and parse the result
+    model_prediction = predictor_model.predict(features_array)
+    predicted_value: float = round(float(model_prediction[0]), 2)
+
+    return PredictionResponse(predicted_next_month_revenue=predicted_value)

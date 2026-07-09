@@ -75,3 +75,38 @@ class PayoutResponse(BaseModel):
         description="The final payout amount issued to the vendor after all deductions, rounded to 2 decimal places.",
         examples=[1237.91]
     )
+
+
+class PredictionRequest(BaseModel):
+    """
+    Schema for validating input features needed to forecast future vendor revenues.
+    """
+    gross_revenue: float = Field(
+        ...,
+        gt=0,
+        description="The current gross revenue. Must be strictly greater than zero.",
+        examples=[1500.50]
+    )
+    platform_fee_percentage: float = Field(
+        ...,
+        ge=0,
+        description="The platform fee percentage rate. Must be greater than or equal to zero.",
+        examples=[5.0]
+    )
+    variable_tax_percentage: float = Field(
+        ...,
+        ge=0,
+        description="The variable tax percentage rate. Must be greater than or equal to zero.",
+        examples=[12.5]
+    )
+
+
+class PredictionResponse(BaseModel):
+    """
+    Schema representing the forecasted gross revenue for the following month.
+    """
+    predicted_next_month_revenue: float = Field(
+        ...,
+        description="The predicted future gross revenue for the next month, rounded to 2 decimal places.",
+        examples=[1645.23]
+    )
